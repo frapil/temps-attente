@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mes prochains passages</title>
+<meta name="theme-color" content="#0a5cd5">
+<meta name="description" content="Temps d'attente des prochains métros, RER, trams et bus (données PRIM Île-de-France Mobilités).">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #16181d; --muted: #6b7280; --border: #e3e5ea;
+    --accent: #0a5cd5; --ok: #0f8a4f; --warn: #b45309; --danger: #c0262d; --chip: #eef0f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1115; --card: #181b21; --text: #eceef2; --muted: #9aa1ad; --border: #2a2e37;
+      --accent: #5b9bff; --ok: #3ccf87; --warn: #f5a524; --danger: #ff6b6b; --chip: #232731; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--border);
+    padding: 10px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; flex: 1; min-width: 160px; }
+  .clock { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 18px; }
+  .meta { color: var(--muted); font-size: 13px; }
+  button, select { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--card); color: var(--text);
+    border-radius: 8px; padding: 6px 12px; }
+  select { padding: 5px 8px; }
+  button:disabled { cursor: default; opacity: .4; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .group { display: inline-flex; align-items: center; gap: 4px; }
+  .group button { padding: 5px 9px; min-width: 34px; }
+  .group .val { font-size: 13px; color: var(--muted); min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
+  main { max-width: 1400px; margin: 0 auto; padding: 16px; }
+  .banner { background: color-mix(in srgb, var(--warn) 15%, var(--card)); border: 1px solid var(--warn);
+    border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; }
+  .banner code { background: var(--chip); padding: 1px 5px; border-radius: 4px; }
+
+  /* Ajout d'arrêt */
+  #addPanel { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 18px; }
+  #addPanel[hidden] { display: none; }
+  .searchrow { display: flex; gap: 8px; flex-wrap: wrap; }
+  .searchrow input { flex: 1; min-width: 200px; font: inherit; padding: 8px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  .modes { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .modes button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+  #results { margin-top: 12px; max-height: 55vh; overflow: auto; }
+  .stopgroup { padding: 10px 0; border-top: 1px solid var(--border); }
+  .stopgroup:first-child { border-top: 0; }
+  .stopgroup .name { font-weight: 600; }
+  .stopgroup .city { color: var(--muted); font-size: 13px; margin-left: 6px; font-weight: 400; }
+  .stopgroup .lines { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .addline { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 3px; border-radius: 8px; }
+  .addline[aria-expanded="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .dirpick { margin-top: 8px; padding: 10px; border-radius: 10px; background: var(--chip); }
+  .dirpick .lbl { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .dirs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .dirs button { font-size: 14px; text-align: left; }
+  .dirs button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+  /* Badges de ligne */
+  .badge { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 26px; padding: 0 6px;
+    border-radius: 6px; font-weight: 700; font-size: 14px; white-space: nowrap; flex-shrink: 0; }
+  .badge.metro { border-radius: 50%; min-width: 26px; width: 26px; padding: 0; }
+  .modelabel { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+
+  /* Tableau (la taille d'affichage s'applique via "zoom") */
+  #board { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; align-items: start; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+  .card.alert { border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); }
+  .card-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .card-head .title { flex: 1; min-width: 0; }
+  .card-head .title b, .card-head .title .dir { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-head .title .dir { font-size: 13px; font-weight: 600; color: var(--accent); }
+  .card-tools { display: flex; gap: 2px; }
+  .card-tools button { border: 0; background: transparent; color: var(--muted); padding: 4px 6px; }
+  .card-tools button:hover:not(:disabled) { color: var(--text); background: var(--chip); }
+  .card-tools button[aria-expanded="true"] { color: var(--accent); background: var(--chip); }
+  .settings { padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--chip); display: flex; flex-direction: column; gap: 10px; }
+  .settings[hidden], .dirpick[hidden] { display: none; }
+  .settings .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+  .settings .row > span:first-child { color: var(--muted); min-width: 64px; }
+  .filter { padding: 8px 12px 0; display: flex; gap: 6px; flex-wrap: wrap; }
+  .filter button { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--chip); border-color: transparent; }
+  .filter button[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
+  ul.deps { list-style: none; margin: 0; padding: 2px 0 4px; }
+  ul.deps li { display: flex; align-items: center; gap: 10px; padding: 6px 12px; }
+  ul.deps li + li { border-top: 1px dashed var(--border); }
+  .dest { flex: 1; min-width: 0; }
+  .dest .d { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .dest small { color: var(--muted); }
+  .wait { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 20px; text-align: right; min-width: 64px; white-space: nowrap; }
+  .wait small { font-size: 12px; font-weight: 500; color: var(--muted); }
+  .wait.imminent { color: var(--ok); }
+  .wait.theo { color: var(--muted); font-weight: 500; }
+  .cancel { color: var(--danger); font-size: 12px; font-weight: 600; }
+  .empty, .err { padding: 12px; color: var(--muted); }
+  .err { color: var(--danger); }
+  .card-foot { padding: 2px 12px 8px; font-size: 11px; color: var(--muted); }
+  #emptyBoard { text-align: center; color: var(--muted); padding: 50px 16px; border: 2px dashed var(--border); border-radius: 12px; }
+
+  /* Perturbations : une seule ligne repliée */
+  details.disrs { font-size: 13px; border-bottom: 1px solid var(--border); }
+  details.disrs > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 5px 12px; }
+  details.disrs > summary::-webkit-details-marker { display: none; }
+  details.disrs > summary::after { content: "▾"; color: var(--muted); }
+  details.disrs[open] > summary::after { content: "▴"; }
+  details.disrs.serious > summary { background: color-mix(in srgb, var(--danger) 9%, var(--card)); }
+  details.disrs .first { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  details.disrs .counts { display: flex; gap: 8px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  details.disrs .list { padding: 4px 12px 8px; display: flex; flex-direction: column; gap: 4px; }
+  details.disr { border-left: 3px solid var(--muted); padding-left: 8px; }
+  details.disr.serious { border-left-color: var(--danger); }
+  details.disr.info { border-left-color: var(--warn); }
+  details.disr > summary { cursor: pointer; list-style: none; }
+  details.disr > summary::-webkit-details-marker { display: none; }
+  details.disr .scope { color: var(--muted); font-size: 11px; }
+  details.disr .x { white-space: pre-line; color: var(--muted); padding: 2px 0 4px; }
+  details.disr .x p { margin: 0 0 4px; }
+  /* Menu Réglages */
+  .menuwrap { position: relative; }
+  #menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: min(340px, calc(100vw - 32px));
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 12px; }
+  #menu[hidden] { display: none; }
+  #menu h3 { margin: 0 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  #menu .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #menu textarea { width: 100%; min-height: 90px; font: 12px/1.3 ui-monospace, Menlo, monospace; padding: 8px;
+    border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  .keyform { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .keyform input, #menu input[type=password] { flex: 1; min-width: 180px; font: inherit; padding: 7px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--card); color: var(--text); }
+  .note { font-size: 12px; color: var(--muted); }
+  .ok-msg { color: var(--ok); font-size: 13px; }
+  .modebadge { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+
+  .mob-text { display: none; }
+  header h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 600px) {
+    .desk-text { display: none; }
+    .mob-text { display: inline; }
+    #toggleAdd { min-width: 44px; font-size: 18px; padding: 4px 12px; }
+    header { padding: 8px 12px; padding-top: max(8px, env(safe-area-inset-top)); gap: 8px; }
+    header h1 { font-size: 16px; min-width: 0; }
+    .desk { display: none !important; }
+    #lastUpdate { display: none; }
+    main { padding: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+    #board { grid-template-columns: 1fr; gap: 10px; }
+    .card-tools button { padding: 6px 8px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="desk-text">Mes prochains passages</span><span class="mob-text">Passages</span></h1>
+  <div class="group desk" title="Taille d'affichage">
+    <button data-zoom="-1" aria-label="Réduire l'affichage">A−</button>
+    <span class="val zoomVal">100 %</span>
+    <button data-zoom="1" aria-label="Agrandir l'affichage">A+</button>
+  </div>
+  <label class="group meta desk" title="Nombre de passages affichés par défaut sur chaque carte">
+    Passages
+    <select class="maxDefault"></select>
+  </label>
+  <span class="meta" id="lastUpdate"></span>
+  <span class="clock" id="clock"></span>
+  <button id="refreshBtn" title="Rafraîchir" aria-label="Rafraîchir">⟳</button>
+  <button class="primary" id="toggleAdd" aria-label="Ajouter un arrêt">+<span class="desk-text"> Ajouter</span></button>
+  <div class="menuwrap">
+    <button id="menuBtn" aria-expanded="false" aria-controls="menu" title="Réglages" aria-label="Réglages">☰</button>
+    <div id="menu" hidden>
+      <section>
+        <h3>Affichage</h3>
+        <div class="row">
+          <div class="group">
+            <button data-zoom="-1" aria-label="Réduire l'affichage">A−</button>
+            <span class="val zoomVal">100 %</span>
+            <button data-zoom="1" aria-label="Agrandir l'affichage">A+</button>
+          </div>
+          <label class="group meta">Passages <select class="maxDefault"></select></label>
+        </div>
+      </section>
+      <section id="keySection" hidden>
+        <h3>Jeton PRIM</h3>
+        <form class="keyform" id="menuKeyForm">
+          <input type="password" name="key" placeholder="Nouveau jeton" autocomplete="off" aria-label="Jeton PRIM">
+          <button type="submit">Enregistrer</button>
+        </form>
+        <div class="note" id="keyState"></div>
+      </section>
+      <section>
+        <h3>Mes cartes</h3>
+        <div class="row">
+          <button id="exportBtn">Exporter</button>
+          <button id="copyBtn">Copier</button>
+          <button id="importBtn">Importer…</button>
+          <input type="file" id="importFile" accept="application/json,.json" hidden>
+        </div>
+        <div class="note" style="margin-top:6px">Pour transférer vos cartes vers un autre appareil : exportez ou copiez ici, puis importez là-bas (fichier ou texte collé).</div>
+        <textarea id="importText" placeholder="…ou collez ici une configuration copiée" hidden></textarea>
+        <div class="row" id="importTextRow" hidden><button id="importTextBtn" class="primary">Importer ce texte</button></div>
+        <div class="ok-msg" id="cfgMsg"></div>
+      </section>
+      <div class="note"><span class="modebadge" id="modeBadge"></span> Données : PRIM – Île-de-France Mobilités</div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="banner" id="keyBanner" hidden>
+    <div data-mode="server">
+      Clé API PRIM absente : créez un compte sur <a href="https://prim.iledefrance-mobilites.fr" target="_blank" rel="noopener">prim.iledefrance-mobilites.fr</a>,
+      générez un jeton, puis ajoutez <code>PRIM_API_KEY=votre_jeton</code> dans le fichier <code>.env</code> et relancez le serveur.
+    </div>
+    <div data-mode="direct">
+      <b>Saisissez votre jeton PRIM</b> pour afficher les horaires. Créez-le sur
+      <a href="https://prim.iledefrance-mobilites.fr" target="_blank" rel="noopener">prim.iledefrance-mobilites.fr</a> (« Mon jeton d'authentification »).
+      Il reste uniquement sur cet appareil.
+      <form class="keyform" id="bannerKeyForm">
+        <input type="password" name="key" placeholder="Jeton PRIM" autocomplete="off" aria-label="Jeton PRIM">
+        <button type="submit" class="primary">Enregistrer</button>
+      </form>
+    </div>
+  </div>
+
+  <section id="addPanel" hidden>
+    <div class="searchrow">
+      <input id="q" type="search" placeholder="Nom de l'arrêt (ex. Châtelet, Nation, La Défense…)" autocomplete="off">
+      <button id="closeAdd">Fermer</button>
+    </div>
+    <div class="modes" id="modes">
+      <button data-mode="" aria-pressed="true">Tous</button>
+      <button data-mode="Metro" aria-pressed="false">Métro</button>
+      <button data-mode="RapidTransit" aria-pressed="false">RER</button>
+      <button data-mode="Tramway" aria-pressed="false">Tram</button>
+      <button data-mode="Bus" aria-pressed="false">Bus</button>
+    </div>
+    <div id="results"></div>
+  </section>
+
+  <div id="board"></div>
+  <div id="emptyBoard" hidden>
+    Aucun arrêt configuré.<br>Cliquez sur <b>+ Ajouter</b> pour commencer.
+  </div>
+</main>
+
+<script src="prim-direct.js"></script>
+<script>
+const REFRESH_MS = 30000;
+const MODE_LABEL = { metro: "Métro", rer: "RER", tram: "Tram", bus: "Bus" };
+const ZOOMS = [0.6, 0.7, 0.8, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2, 2.5];
+const MAX_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10, 15];
+
+let config = { stops: [], display: {} };
+let lastData = {};          // uid -> {departures, error, updated}
+let lastDisr = {};          // uid -> [perturbations]
+const openDisr = new Set(); // perturbations dépliées (conservées entre deux rafraîchissements)
+const openSettings = new Set();
+const dirCache = {};        // "stops|line" -> Promise<options>
+let searchMode = "";
+
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const newUid = () => Math.random().toString(36).slice(2, 10);
+const allStops = (s) => s.all_stop_ids || s.stop_ids;
+const display = () => (config.display ||= {});
+const maxFor = (s) => s.max || display().max || 6;
+
+function badge(s) {
+  const bg = s.color || "#888", fg = s.text_color || "#fff";
+  return `<span class="badge ${esc(s.mode)}" style="background:${esc(bg)};color:${esc(fg)}" title="${esc(MODE_LABEL[s.mode] || s.mode)} ${esc(s.line)}">${esc(s.line)}</span>`;
+}
+
+let MODE = "server";  // "server" : servi par server.py ; "direct" : appels PRIM depuis le navigateur
+
+async function detectMode() {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 2500);
+    const r = await fetch("/api/status", { signal: ctl.signal, cache: "no-store" });
+    clearTimeout(t);
+    if (r.ok && "api_key" in (await r.json())) return "server";
+  } catch { /* pas de serveur */ }
+  return "direct";
+}
+
+async function api(path, opts) {
+  if (MODE === "direct") return window.PrimDirect.handle(path, opts);
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+  return j;
+}
+
+async function saveConfig() {
+  await api("/api/config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) });
+}
+
+function getDirections(stopIds, lineId) {
+  const k = stopIds.join(",") + "|" + lineId;
+  if (!dirCache[k]) {
+    dirCache[k] = api(`/api/directions?stop=${encodeURIComponent(stopIds.join(","))}&line=${encodeURIComponent(lineId)}`)
+      .catch(e => { delete dirCache[k]; throw e; });
+  }
+  return dirCache[k];
+}
+
+/* Applique un sens choisi à une carte */
+function applyDirection(s, opt) {
+  s.all_stop_ids = allStops(s);
+  s.dir_key = opt.key;
+  s.dir_label = opt.key === "all" ? "" : opt.label;
+  s.stop_ids = opt.stop_ids || s.all_stop_ids;
+  if (opt.heading) s.heading = opt.heading; else delete s.heading;
+  s.hidden_destinations = [];
+}
+
+/* ---------- Affichage : taille et nombre de passages ---------- */
+function applyDisplay() {
+  const z = display().zoom || 1;
+  $("main").style.zoom = z;
+  document.querySelectorAll(".zoomVal").forEach(el => el.textContent = Math.round(z * 100) + " %");
+  document.querySelectorAll('[data-zoom="-1"]').forEach(b => b.disabled = z <= ZOOMS[0]);
+  document.querySelectorAll('[data-zoom="1"]').forEach(b => b.disabled = z >= ZOOMS[ZOOMS.length - 1]);
+  document.querySelectorAll(".maxDefault").forEach(el => el.value = String(display().max || 6));
+}
+function stepZoom(dir) {
+  const z = display().zoom || 1;
+  const i = ZOOMS.findIndex(v => v >= z - 1e-6);
+  display().zoom = ZOOMS[Math.min(ZOOMS.length - 1, Math.max(0, (i < 0 ? 4 : i) + dir))];
+  applyDisplay(); saveConfig();
+}
+document.querySelectorAll("[data-zoom]").forEach(b => b.onclick = () => stepZoom(+b.dataset.zoom));
+document.querySelectorAll(".maxDefault").forEach(sel => {
+  sel.innerHTML = MAX_CHOICES.map(n => `<option value="${n}">${n}</option>`).join("");
+  sel.onchange = (e) => {
+    display().max = +e.target.value;
+    applyDisplay(); config.stops.forEach(renderCardBody); saveConfig();
+  };
+});
+
+/* ---------- Menu Réglages : jeton, export / import ---------- */
+function toggleMenu(open) {
+  const m = $("#menu");
+  m.hidden = open === undefined ? !m.hidden : !open;
+  $("#menuBtn").setAttribute("aria-expanded", String(!m.hidden));
+  if (!m.hidden) updateKeyState();
+}
+$("#menuBtn").onclick = (e) => { e.stopPropagation(); toggleMenu(); };
+document.addEventListener("click", (e) => { if (!e.target.closest(".menuwrap")) toggleMenu(false); });
+
+function updateKeyState() {
+  if (MODE !== "direct") return;
+  const k = window.PrimDirect.getKey();
+  $("#keyState").textContent = k ? `Jeton enregistré sur cet appareil (…${k.slice(-4)}).` : "Aucun jeton enregistré.";
+}
+
+async function saveKey(form) {
+  const v = form.key.value.trim();
+  if (!v) return;
+  window.PrimDirect.setKey(v);
+  form.key.value = "";
+  $("#keyBanner").hidden = true;
+  updateKeyState();
+  lastRefresh = 0;
+  refreshAll(true);
+}
+$("#bannerKeyForm").onsubmit = (e) => { e.preventDefault(); saveKey(e.target); };
+$("#menuKeyForm").onsubmit = (e) => { e.preventDefault(); saveKey(e.target); };
+
+function exportText() { return JSON.stringify(config, null, 2); }
+function flash(msg) { $("#cfgMsg").textContent = msg; setTimeout(() => { if ($("#cfgMsg").textContent === msg) $("#cfgMsg").textContent = ""; }, 4000); }
+
+$("#exportBtn").onclick = () => {
+  const blob = new Blob([exportText()], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "prochains-passages.json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  flash("Fichier exporté.");
+};
+$("#copyBtn").onclick = async () => {
+  try { await navigator.clipboard.writeText(exportText()); flash("Configuration copiée."); }
+  catch { $("#importText").hidden = false; $("#importText").value = exportText(); $("#importText").select(); flash("Copiez le texte sélectionné."); }
+};
+$("#importBtn").onclick = () => {
+  $("#importText").hidden = false; $("#importTextRow").hidden = false; $("#importText").value = "";
+  $("#importFile").click();
+};
+$("#importFile").onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  await importConfig(await f.text());
+  e.target.value = "";
+};
+$("#importTextBtn").onclick = () => importConfig($("#importText").value);
+
+async function importConfig(text) {
+  let cfg;
+  try { cfg = JSON.parse(text); } catch { flash("Texte non reconnu (JSON invalide)."); return; }
+  if (!cfg || !Array.isArray(cfg.stops)) { flash("Ce n'est pas une configuration de cartes."); return; }
+  if (config.stops.length && !confirm(`Remplacer vos ${config.stops.length} carte(s) par les ${cfg.stops.length} importée(s) ?`)) return;
+  cfg.stops.forEach(s => { if (!s.uid) s.uid = newUid(); });
+  config = cfg;
+  await saveConfig();
+  lastData = {}; lastDisr = {};
+  applyDisplay(); renderBoard(); refreshAll(true);
+  $("#importText").hidden = true; $("#importTextRow").hidden = true;
+  flash(`${cfg.stops.length} carte(s) importée(s).`);
+}
+
+/* ---------- Recherche ---------- */
+let searchTimer, searchSeq = 0;
+$("#q").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(doSearch, 300); });
+$("#modes").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  searchMode = b.dataset.mode;
+  $("#modes").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  doSearch();
+});
+$("#toggleAdd").onclick = () => { $("#addPanel").hidden = !$("#addPanel").hidden; if (!$("#addPanel").hidden) $("#q").focus(); };
+$("#closeAdd").onclick = () => { $("#addPanel").hidden = true; };
+
+const lineKey = (it) => allStops(it).join(",") + "|" + it.line_id;
+
+async function doSearch() {
+  const q = $("#q").value.trim();
+  const res = $("#results");
+  if (q.length < 2) { res.innerHTML = ""; return; }
+  const seq = ++searchSeq;
+  res.innerHTML = `<div class="empty">Recherche…</div>`;
+  try {
+    const items = await api(`/api/search?q=${encodeURIComponent(q)}&mode=${encodeURIComponent(searchMode)}`);
+    if (seq !== searchSeq) return;
+    if (!items.length) { res.innerHTML = `<div class="empty">Aucun arrêt trouvé.</div>`; return; }
+    const groups = new Map();
+    for (const it of items) {
+      const g = it.stop_name + "|" + (it.city || "");
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(it);
+    }
+    const count = {};
+    config.stops.forEach(s => { count[lineKey(s)] = (count[lineKey(s)] || 0) + 1; });
+    res.innerHTML = [...groups.values()].map(list => `
+      <div class="stopgroup">
+        <div class="name">${esc(list[0].stop_name)}<span class="city">${esc(list[0].city || "")}</span></div>
+        <div class="lines">${list.map(it => {
+          const n = count[lineKey(it)] || 0;
+          return `<button class="addline" aria-expanded="false" data-item='${esc(JSON.stringify(it))}'
+                   aria-label="Choisir le sens : ${esc(MODE_LABEL[it.mode] || it.mode)} ${esc(it.line)}">
+                   ${badge(it)}<span class="modelabel">${esc(MODE_LABEL[it.mode] || it.mode)}</span>${n ? ` <span class="meta">✓${n > 1 ? n : ""}</span>` : ""}</button>`;
+        }).join("")}</div>
+        <div class="dirpick" hidden></div>
+      </div>`).join("");
+  } catch (e) {
+    if (seq === searchSeq) res.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }
+}
+
+function dirButtons(opts, isOn) {
+  return opts.map((o, i) => `<button data-i="${i}" class="${isOn(o) ? "on" : ""}">${
+    o.key === "all" ? "⇄ Les deux sens" : "→ " + esc(o.label)}${isOn(o) ? " ✓" : ""}</button>`).join("");
+}
+
+$("#results").addEventListener("click", async (e) => {
+  // 1) clic sur une ligne : affiche le choix du sens
+  const b = e.target.closest("button.addline");
+  if (b) {
+    const group = b.closest(".stopgroup");
+    const pick = $(".dirpick", group);
+    const wasOpen = b.getAttribute("aria-expanded") === "true";
+    group.querySelectorAll(".addline").forEach(x => x.setAttribute("aria-expanded", "false"));
+    if (wasOpen) { pick.hidden = true; return; }
+    b.setAttribute("aria-expanded", "true");
+    const it = JSON.parse(b.dataset.item);
+    pick.hidden = false;
+    pick.dataset.item = b.dataset.item;
+    pick.innerHTML = `<div class="lbl">${badge(it)} Quel sens ? Chargement…</div>`;
+    try {
+      const opts = await getDirections(it.stop_ids, it.line_id);
+      if (pick.dataset.item !== b.dataset.item) return;
+      pick._opts = opts;
+      renderPick(pick, it, opts);
+    } catch (err) {
+      pick.innerHTML = `<div class="err">${esc(err.message)}</div>`;
+    }
+    return;
+  }
+  // 2) clic sur un sens : ajoute la carte
+  const d = e.target.closest(".dirpick .dirs button");
+  if (d) {
+    const pick = d.closest(".dirpick");
+    const it = JSON.parse(pick.dataset.item);
+    const opt = pick._opts[+d.dataset.i];
+    const entry = { ...it, uid: newUid(), hidden_destinations: [] };
+    applyDirection(entry, opt);
+    config.stops.push(entry);
+    renderPick(pick, it, pick._opts);
+    renderBoard();
+    refreshOne(entry);
+    await saveConfig();
+  }
+});
+
+function renderPick(pick, it, opts) {
+  const added = new Set(config.stops.filter(s => lineKey(s) === lineKey(it)).map(s => s.dir_key || "all"));
+  pick.innerHTML = `<div class="lbl">${badge(it)} Choisissez le sens à afficher (vous pouvez ajouter une carte par sens) :</div>
+    <div class="dirs">${dirButtons(opts, o => added.has(o.key))}</div>`;
+}
+
+/* ---------- Tableau ---------- */
+function cardEl(s) { return document.querySelector(`.card[data-uid="${CSS.escape(s.uid)}"]`); }
+
+function renderBoard() {
+  const board = $("#board");
+  $("#emptyBoard").hidden = config.stops.length > 0;
+  board.innerHTML = config.stops.map((s, i) => `
+    <article class="card" data-uid="${esc(s.uid)}">
+      <div class="card-head">
+        ${badge(s)}
+        <div class="title"><b>${esc(s.stop_name)}</b>${
+          s.dir_label ? `<span class="dir" title="${esc(s.dir_label)}">→ ${esc(s.dir_label)}</span>`
+                      : `<span class="meta">${esc(MODE_LABEL[s.mode] || s.mode)} ${esc(s.line)} · ${esc(s.city || "")}</span>`}</div>
+        <div class="card-tools">
+          <button data-act="settings" data-i="${i}" title="Réglages de la carte" aria-expanded="${openSettings.has(s.uid)}">⚙</button>
+          <button data-act="up" data-i="${i}" title="Monter" ${i === 0 ? "disabled" : ""}>↑</button>
+          <button data-act="down" data-i="${i}" title="Descendre" ${i === config.stops.length - 1 ? "disabled" : ""}>↓</button>
+          <button data-act="del" data-i="${i}" title="Supprimer">✕</button>
+        </div>
+      </div>
+      <div class="settings" ${openSettings.has(s.uid) ? "" : "hidden"}></div>
+      <div class="body"><div class="empty">Chargement…</div></div>
+    </article>`).join("");
+  config.stops.forEach(s => { renderCardBody(s); if (openSettings.has(s.uid)) renderSettings(s); });
+}
+
+async function renderSettings(s) {
+  const card = cardEl(s); if (!card) return;
+  const box = $(".settings", card);
+  const maxOpts = [`<option value="">Par défaut (${display().max || 6})</option>`]
+    .concat(MAX_CHOICES.map(n => `<option value="${n}" ${s.max === n ? "selected" : ""}>${n}</option>`)).join("");
+  box.innerHTML = `
+    <div class="row"><span>Sens</span><div class="dirs"><span class="meta">Chargement…</span></div></div>
+    <div class="row"><span>Passages</span><select data-set="max">${maxOpts}</select></div>`;
+  try {
+    const opts = await getDirections(allStops(s), s.line_id);
+    box._opts = opts;
+    $(".dirs", box).innerHTML = dirButtons(opts, o => o.key === (s.dir_key || "all"));
+  } catch (e) {
+    $(".dirs", box).innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  }
+}
+
+function fmtWait(dep) {
+  const mins = Math.max(0, Math.floor((new Date(dep.time) - Date.now()) / 60000));
+  if (dep.at_stop) return { txt: "À quai", cls: "imminent" };
+  if (mins === 0) return { txt: "Proche", cls: "imminent" };
+  if (mins >= 60) {
+    const t = new Date(dep.time);
+    return { txt: t.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }), cls: "" };
+  }
+  return { txt: `${mins}<small> min</small>`, cls: mins <= 2 ? "imminent" : "" };
+}
+
+function renderCardBody(s) {
+  const card = cardEl(s);
+  if (!card) return;
+  const body = $(".body", card);
+  const d = lastData[s.uid];
+  if (!d) return;
+  const disrHtml = renderDisruptions(s, card);
+  if (d.error) { body.innerHTML = disrHtml + `<div class="err">${esc(d.error)}</div>`; return; }
+
+  const hidden = new Set(s.hidden_destinations || []);
+  const dests = [...new Set(d.departures.map(x => x.destination || "?"))];
+  const deps = d.departures.filter(x => !hidden.has(x.destination || "?") && new Date(x.time) > Date.now() - 60000);
+
+  // filtre par destination : utile surtout pour les RER (missions), seulement s'il y a plusieurs destinations
+  const filter = dests.length > 1 ? `<div class="filter">${dests.map(n =>
+    `<button data-dest="${esc(n)}" aria-pressed="${!hidden.has(n)}">${esc(n)}</button>`).join("")}</div>` : "";
+
+  const hasSerious = (lastDisr[s.uid] || []).some(x => x.kind === "serious");
+  const list = deps.length ? `<ul class="deps">${deps.slice(0, maxFor(s)).map(x => {
+    const w = fmtWait(x);
+    const cancelled = (x.status || "").toLowerCase() === "cancelled";
+    const sub = [x.mission && `Mission ${x.mission}`, x.platform && `Voie ${x.platform}`].filter(Boolean).join(" · ");
+    return `<li>
+      <div class="dest"><span class="d">${esc(x.destination || x.direction || "—")}</span>${sub ? `<small>${esc(sub)}</small>` : ""}</div>
+      ${cancelled ? `<span class="cancel">Supprimé</span>` :
+        `<div class="wait ${w.cls} ${x.realtime ? "" : "theo"}" title="${x.realtime ? "Temps réel" : "Horaire théorique"}">${w.txt}</div>`}
+    </li>`; }).join("")}</ul>`
+    : `<div class="empty">Aucun passage prévu prochainement${hasSerious ? " — voir la perturbation ci-dessus" : ""}.</div>`;
+
+  const upd = new Date(d.updated).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  body.innerHTML = disrHtml + filter + list + `<div class="card-foot">Mis à jour à ${upd}</div>`;
+}
+
+/* Perturbations : une ligne compacte (titre principal + compteurs), dépliable */
+function renderDisruptions(s, card) {
+  const list = lastDisr[s.uid] || [];
+  const serious = list.filter(x => x.kind === "serious");
+  const info = list.filter(x => x.kind === "info");
+  const elev = list.filter(x => x.kind === "elevator");
+  card.classList.toggle("alert", serious.length > 0);
+  if (!list.length) return "";
+  const first = serious[0] || info[0];
+  const counts = [serious.length && `⚠️ ${serious.length}`, info.length && `ℹ️ ${info.length}`, elev.length && `♿ ${elev.length}`]
+    .filter(Boolean).map(t => `<span>${t}</span>`).join("");
+  const wrapId = s.uid + "#all";
+  const item = (x, i) => {
+    const id = s.uid + "#" + (x.id || i);
+    return `<details class="disr ${x.kind}" data-id="${esc(id)}" ${openDisr.has(id) ? "open" : ""}>
+      <summary>${esc(x.title)} <span class="scope">· ${x.scope === "stop" ? "cet arrêt" : "toute la ligne"}</span></summary>
+      ${x.text ? `<div class="x">${esc(x.text)}</div>` : ""}</details>`;
+  };
+  let inner = serious.concat(info).map(item).join("");
+  if (elev.length) {
+    const id = s.uid + "#elevators";
+    inner += `<details class="disr elevator" data-id="${esc(id)}" ${openDisr.has(id) ? "open" : ""}>
+      <summary>♿ ${elev.length} ascenseur${elev.length > 1 ? "s" : ""} en panne <span class="scope">· cet arrêt</span></summary>
+      <div class="x">${elev.map(x => `<p>${esc(x.text || x.title)}</p>`).join("")}</div></details>`;
+  }
+  return `<details class="disrs ${serious.length ? "serious" : ""}" data-id="${esc(wrapId)}" ${openDisr.has(wrapId) ? "open" : ""}>
+    <summary><span class="first" title="${esc(first ? first.title : "")}">${first ? esc(first.title) : "Ascenseurs"}</span>
+      <span class="counts">${counts}</span></summary>
+    <div class="list">${inner}</div></details>`;
+}
+
+// mémorise les perturbations dépliées pour qu'elles le restent après un rafraîchissement
+$("#board").addEventListener("toggle", (e) => {
+  const d = e.target; if (!d.matches || !d.matches("details.disrs, details.disr")) return;
+  d.open ? openDisr.add(d.dataset.id) : openDisr.delete(d.dataset.id);
+}, true);
+
+function stopOf(el) {
+  const uid = el.closest(".card").dataset.uid;
+  return config.stops.find(x => x.uid === uid);
+}
+
+$("#board").addEventListener("change", (e) => {
+  if (e.target.dataset.set !== "max") return;
+  const s = stopOf(e.target);
+  if (e.target.value) s.max = +e.target.value; else delete s.max;
+  renderCardBody(s); saveConfig();
+});
+
+$("#board").addEventListener("click", async (e) => {
+  const fb = e.target.closest(".filter button");
+  if (fb) {
+    const s = stopOf(fb);
+    const h = new Set(s.hidden_destinations || []);
+    h.has(fb.dataset.dest) ? h.delete(fb.dataset.dest) : h.add(fb.dataset.dest);
+    s.hidden_destinations = [...h];
+    renderCardBody(s); saveConfig();
+    return;
+  }
+  const db = e.target.closest(".settings .dirs button");
+  if (db) {
+    const s = stopOf(db);
+    const opt = db.closest(".settings")._opts[+db.dataset.i];
+    applyDirection(s, opt);
+    delete lastData[s.uid];
+    renderBoard(); refreshOne(s); saveConfig();
+    return;
+  }
+  const b = e.target.closest(".card-tools button"); if (!b) return;
+  const i = +b.dataset.i;
+  const s = config.stops[i];
+  if (b.dataset.act === "settings") {
+    openSettings.has(s.uid) ? openSettings.delete(s.uid) : openSettings.add(s.uid);
+    renderBoard();
+    return;
+  }
+  if (b.dataset.act === "del") {
+    if (!confirm(`Retirer ${s.stop_name} (${s.line}${s.dir_label ? " → " + s.dir_label : ""}) ?`)) return;
+    config.stops.splice(i, 1);
+  } else {
+    const j = b.dataset.act === "up" ? i - 1 : i + 1;
+    [config.stops[i], config.stops[j]] = [config.stops[j], config.stops[i]];
+  }
+  await saveConfig(); renderBoard();
+});
+
+/* ---------- Rafraîchissement ---------- */
+async function refreshDisruptions(s) {
+  try {
+    lastDisr[s.uid] = await api(`/api/disruptions?line=${encodeURIComponent(s.line_id)}&stop=${encodeURIComponent(s.stop_name)}`);
+  } catch (e) {
+    console.warn("Perturbations indisponibles", s.stop_name, s.line, e.message);
+  }
+}
+
+async function refreshOne(s) {
+  const disr = refreshDisruptions(s);
+  let url = `/api/departures?stop=${encodeURIComponent(s.stop_ids.join(","))}&line=${encodeURIComponent(s.line_id)}`;
+  if (s.heading) url += `&heading=${s.heading.join(",")}`;
+  try {
+    lastData[s.uid] = await api(url);
+  } catch (e) {
+    lastData[s.uid] = { error: e.message };
+  }
+  await disr;
+  renderCardBody(s);
+}
+
+let lastRefresh = 0, refreshing = null;
+const MIN_REFRESH_MS = 10000;  // au plus un rafraîchissement toutes les 10 s (sauf ⟳)
+
+async function refreshAll(force = false) {
+  if (refreshing) return refreshing;
+  if (!force && Date.now() - lastRefresh < MIN_REFRESH_MS) return;
+  lastRefresh = Date.now();
+  refreshing = Promise.all(config.stops.map(refreshOne)).finally(() => { refreshing = null; });
+  await refreshing;
+  $("#lastUpdate").textContent = "Actualisé " + new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+$("#refreshBtn").onclick = () => refreshAll(true);
+
+function tick() {
+  $("#clock").textContent = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+(async function init() {
+  tick(); setInterval(tick, 1000);
+  MODE = await detectMode();
+  document.querySelectorAll("#keyBanner [data-mode]").forEach(el => el.hidden = el.dataset.mode !== MODE);
+  $("#keySection").hidden = MODE !== "direct";
+  $("#modeBadge").textContent = MODE === "direct" ? "Mode autonome" : "Mode serveur";
+  try { $("#keyBanner").hidden = (await api("/api/status")).api_key; } catch {}
+  config = await api("/api/config");
+  config.stops ||= [];
+  // anciennes cartes : identifiant unique manquant
+  let migrated = false;
+  config.stops.forEach(s => { if (!s.uid) { s.uid = newUid(); migrated = true; } });
+  if (migrated) saveConfig();
+  applyDisplay();
+  renderBoard();
+  if (!config.stops.length) $("#addPanel").hidden = false;
+  refreshAll(true);
+  setInterval(() => { if (!document.hidden) refreshAll(); }, REFRESH_MS);
+  setInterval(() => config.stops.forEach(renderCardBody), 15000);   // décompte des minutes entre deux appels
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshAll(); });
+})();
+
+/* Appli installable (PWA) : service worker en HTTPS ou en local */
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(e => console.warn("Service worker :", e)));
+}
+</script>
+</body>
+</html>
