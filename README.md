@@ -54,11 +54,3 @@ Demandez plutôt les **quotas augmentés**, gratuits (1 000 000 par jour) : page
 - `manifest.webmanifest`, `sw.js`, `icon-*.png` : appli installable (PWA).
 
 Après une modification, augmentez `VERSION` dans `docs/sw.js` pour que les appareils récupèrent la nouvelle version.
-
-Pour tester en local :
-
-```bash
-cd docs && python3 -m http.server 8080
-```
-
-puis ouvrez http://localhost:8080.
