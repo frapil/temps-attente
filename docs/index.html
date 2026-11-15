@@ -100,6 +100,11 @@
   .empty, .err { padding: 12px; color: var(--muted); }
   .err { color: var(--danger); }
   .card-foot { padding: 2px 12px 8px; font-size: 11px; color: var(--muted); }
+  /* Onglets Aller / Retour */
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tabs button { flex: 1; max-width: 220px; padding: 9px 14px; font-weight: 600; border-radius: 10px; }
+  .tabs button[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tabs .n { font-weight: 400; opacity: .8; }
   #emptyBoard { text-align: center; color: var(--muted); padding: 50px 16px; border: 2px dashed var(--border); border-radius: 12px; }
 
   /* Perturbations : une seule ligne repliée */
@@ -182,6 +187,10 @@
           </div>
           <label class="group meta">Passages <select class="maxDefault"></select></label>
         </div>
+        <div class="row" style="margin-top:8px">
+          <label class="group meta" title="Au démarrage, l'appli ouvre l'onglet Aller avant cette heure, Retour après">
+            Onglet Retour à partir de <select id="switchHour"></select></label>
+        </div>
       </section>
       <section id="keySection" hidden>
         <h3>Jeton PRIM</h3>
@@ -241,10 +250,12 @@
     <div id="results"></div>
   </section>
 
-  <div id="board"></div>
-  <div id="emptyBoard" hidden>
-    Aucun arrêt configuré.<br>Cliquez sur <b>+ Ajouter</b> pour commencer.
+  <div class="tabs" id="tabs" role="tablist">
+    <button role="tab" data-tab="aller" aria-selected="false">Aller <span class="n"></span></button>
+    <button role="tab" data-tab="retour" aria-selected="false">Retour <span class="n"></span></button>
   </div>
+  <div id="board" role="tabpanel"></div>
+  <div id="emptyBoard" hidden></div>
 </main>
 
 <script src="prim-direct.js"></script>
@@ -268,6 +279,17 @@ const newUid = () => Math.random().toString(36).slice(2, 10);
 const allStops = (s) => s.all_stop_ids || s.stop_ids;
 const display = () => (config.display ||= {});
 const maxFor = (s) => s.max || display().max || 6;
+
+/* Onglets Aller / Retour : une carte sans champ "tabs" est dans les deux */
+const TABS = { aller: "Aller", retour: "Retour" };
+const TAB_CHOICES = [["aller", "Aller"], ["retour", "Retour"], ["both", "Les deux"]];
+const tabsOf = (s) => (Array.isArray(s.tabs) && s.tabs.length ? s.tabs : ["aller", "retour"]);
+const inTab = (s, t) => tabsOf(s).includes(t);
+const tabChoice = (s) => (tabsOf(s).length > 1 ? "both" : tabsOf(s)[0]);
+const switchHour = () => (Number.isInteger(display().switch_hour) ? display().switch_hour : 12);
+const tabForNow = () => (new Date().getHours() < switchHour() ? "aller" : "retour");
+let currentTab = "aller";
+const visibleStops = () => config.stops.filter(s => inTab(s, currentTab));
 
 function badge(s) {
   const bg = s.color || "#888", fg = s.text_color || "#fff";
@@ -326,6 +348,7 @@ function applyDisplay() {
   document.querySelectorAll('[data-zoom="-1"]').forEach(b => b.disabled = z <= ZOOMS[0]);
   document.querySelectorAll('[data-zoom="1"]').forEach(b => b.disabled = z >= ZOOMS[ZOOMS.length - 1]);
   document.querySelectorAll(".maxDefault").forEach(el => el.value = String(display().max || 6));
+  $("#switchHour").value = String(switchHour());
 }
 function stepZoom(dir) {
   const z = display().zoom || 1;
@@ -338,8 +361,34 @@ document.querySelectorAll(".maxDefault").forEach(sel => {
   sel.innerHTML = MAX_CHOICES.map(n => `<option value="${n}">${n}</option>`).join("");
   sel.onchange = (e) => {
     display().max = +e.target.value;
-    applyDisplay(); config.stops.forEach(renderCardBody); saveConfig();
+    applyDisplay(); visibleStops().forEach(renderCardBody); saveConfig();
   };
+});
+$("#switchHour").innerHTML = Array.from({ length: 24 }, (_, h) => `<option value="${h}">${h} h</option>`).join("");
+$("#switchHour").onchange = (e) => {
+  display().switch_hour = +e.target.value;
+  saveConfig();
+  setTab(tabForNow());
+};
+
+/* ---------- Onglets ---------- */
+function renderTabs() {
+  document.querySelectorAll("#tabs button").forEach(b => {
+    const t = b.dataset.tab;
+    b.setAttribute("aria-selected", String(t === currentTab));
+    $(".n", b).textContent = `(${config.stops.filter(s => inTab(s, t)).length})`;
+  });
+}
+function setTab(t) {
+  if (t === currentTab) return;
+  currentTab = t;
+  renderBoard();
+  // cartes jamais chargées ou trop anciennes : on les rafraîchit
+  visibleStops().filter(s => !lastData[s.uid] || Date.now() - (lastData[s.uid].fetched || 0) > MIN_REFRESH_MS).forEach(refreshOne);
+}
+$("#tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-tab]");
+  if (b) setTab(b.dataset.tab);
 });
 
 /* ---------- Menu Réglages : jeton, export / import ---------- */
@@ -495,7 +544,7 @@ $("#results").addEventListener("click", async (e) => {
     const pick = d.closest(".dirpick");
     const it = JSON.parse(pick.dataset.item);
     const opt = pick._opts[+d.dataset.i];
-    const entry = { ...it, uid: newUid(), hidden_destinations: [] };
+    const entry = { ...it, uid: newUid(), hidden_destinations: [], tabs: [currentTab] };
     applyDirection(entry, opt);
     config.stops.push(entry);
     renderPick(pick, it, pick._opts);
@@ -507,7 +556,7 @@ $("#results").addEventListener("click", async (e) => {
 
 function renderPick(pick, it, opts) {
   const added = new Set(config.stops.filter(s => lineKey(s) === lineKey(it)).map(s => s.dir_key || "all"));
-  pick.innerHTML = `<div class="lbl">${badge(it)} Choisissez le sens à afficher (vous pouvez ajouter une carte par sens) :</div>
+  pick.innerHTML = `<div class="lbl">${badge(it)} Choisissez le sens à afficher (une carte par sens, ajoutée à l'onglet <b>${TABS[currentTab]}</b>) :</div>
     <div class="dirs">${dirButtons(opts, o => added.has(o.key))}</div>`;
 }
 
@@ -516,8 +565,14 @@ function cardEl(s) { return document.querySelector(`.card[data-uid="${CSS.escape
 
 function renderBoard() {
   const board = $("#board");
-  $("#emptyBoard").hidden = config.stops.length > 0;
-  board.innerHTML = config.stops.map((s, i) => `
+  const stops = visibleStops();
+  renderTabs();
+  const empty = $("#emptyBoard");
+  empty.hidden = stops.length > 0;
+  empty.innerHTML = config.stops.length
+    ? `Aucune carte dans l'onglet <b>${TABS[currentTab]}</b>.<br>Ajoutez-en avec <b>+</b>, ou rangez une carte existante via ⚙ (dans l'autre onglet).`
+    : `Aucun arrêt configuré.<br>Cliquez sur <b>+ Ajouter</b> pour commencer.`;
+  board.innerHTML = stops.map((s, i) => `
     <article class="card" data-uid="${esc(s.uid)}">
       <div class="card-head">
         ${badge(s)}
@@ -525,16 +580,16 @@ function renderBoard() {
           s.dir_label ? `<span class="dir" title="${esc(s.dir_label)}">→ ${esc(s.dir_label)}</span>`
                       : `<span class="meta">${esc(MODE_LABEL[s.mode] || s.mode)} ${esc(s.line)} · ${esc(s.city || "")}</span>`}</div>
         <div class="card-tools">
-          <button data-act="settings" data-i="${i}" title="Réglages de la carte" aria-expanded="${openSettings.has(s.uid)}">⚙</button>
-          <button data-act="up" data-i="${i}" title="Monter" ${i === 0 ? "disabled" : ""}>↑</button>
-          <button data-act="down" data-i="${i}" title="Descendre" ${i === config.stops.length - 1 ? "disabled" : ""}>↓</button>
-          <button data-act="del" data-i="${i}" title="Supprimer">✕</button>
+          <button data-act="settings" title="Réglages de la carte" aria-expanded="${openSettings.has(s.uid)}">⚙</button>
+          <button data-act="up" title="Monter" ${i === 0 ? "disabled" : ""}>↑</button>
+          <button data-act="down" title="Descendre" ${i === stops.length - 1 ? "disabled" : ""}>↓</button>
+          <button data-act="del" title="Supprimer">✕</button>
         </div>
       </div>
       <div class="settings" ${openSettings.has(s.uid) ? "" : "hidden"}></div>
       <div class="body"><div class="empty">Chargement…</div></div>
     </article>`).join("");
-  config.stops.forEach(s => { renderCardBody(s); if (openSettings.has(s.uid)) renderSettings(s); });
+  stops.forEach(s => { renderCardBody(s); if (openSettings.has(s.uid)) renderSettings(s); });
 }
 
 async function renderSettings(s) {
@@ -544,13 +599,15 @@ async function renderSettings(s) {
     .concat(MAX_CHOICES.map(n => `<option value="${n}" ${s.max === n ? "selected" : ""}>${n}</option>`)).join("");
   box.innerHTML = `
     <div class="row"><span>Sens</span><div class="dirs"><span class="meta">Chargement…</span></div></div>
-    <div class="row"><span>Passages</span><select data-set="max">${maxOpts}</select></div>`;
+    <div class="row"><span>Passages</span><select data-set="max">${maxOpts}</select></div>
+    <div class="row"><span>Onglet</span><div class="dirs tabpick">${TAB_CHOICES.map(([k, l]) =>
+      `<button data-tabset="${k}" class="${tabChoice(s) === k ? "on" : ""}">${l}${tabChoice(s) === k ? " ✓" : ""}</button>`).join("")}</div></div>`;
   try {
     const opts = await getDirections(allStops(s), s.line_id);
     box._opts = opts;
-    $(".dirs", box).innerHTML = dirButtons(opts, o => o.key === (s.dir_key || "all"));
+    $(".dirs:not(.tabpick)", box).innerHTML = dirButtons(opts, o => o.key === (s.dir_key || "all"));
   } catch (e) {
-    $(".dirs", box).innerHTML = `<span class="err">${esc(e.message)}</span>`;
+    $(".dirs:not(.tabpick)", box).innerHTML = `<span class="err">${esc(e.message)}</span>`;
   }
 }
 
@@ -657,6 +714,15 @@ $("#board").addEventListener("click", async (e) => {
     renderCardBody(s); saveConfig();
     return;
   }
+  const tb = e.target.closest(".settings [data-tabset]");
+  if (tb) {
+    const s = stopOf(tb);
+    const k = tb.dataset.tabset;
+    s.tabs = k === "both" ? ["aller", "retour"] : [k];
+    if (!inTab(s, currentTab)) openSettings.delete(s.uid);
+    renderBoard(); saveConfig();
+    return;
+  }
   const db = e.target.closest(".settings .dirs button");
   if (db) {
     const s = stopOf(db);
@@ -667,8 +733,8 @@ $("#board").addEventListener("click", async (e) => {
     return;
   }
   const b = e.target.closest(".card-tools button"); if (!b) return;
-  const i = +b.dataset.i;
-  const s = config.stops[i];
+  const s = stopOf(b);
+  const i = config.stops.indexOf(s);
   if (b.dataset.act === "settings") {
     openSettings.has(s.uid) ? openSettings.delete(s.uid) : openSettings.add(s.uid);
     renderBoard();
@@ -678,7 +744,11 @@ $("#board").addEventListener("click", async (e) => {
     if (!confirm(`Retirer ${s.stop_name} (${s.line}${s.dir_label ? " → " + s.dir_label : ""}) ?`)) return;
     config.stops.splice(i, 1);
   } else {
-    const j = b.dataset.act === "up" ? i - 1 : i + 1;
+    // échange avec la carte voisine visible dans l'onglet courant
+    const vis = visibleStops();
+    const v = vis.indexOf(s) + (b.dataset.act === "up" ? -1 : 1);
+    if (v < 0 || v >= vis.length) return;
+    const j = config.stops.indexOf(vis[v]);
     [config.stops[i], config.stops[j]] = [config.stops[j], config.stops[i]];
   }
   await saveConfig(); renderBoard();
@@ -702,6 +772,7 @@ async function refreshOne(s) {
   } catch (e) {
     lastData[s.uid] = { error: e.message };
   }
+  lastData[s.uid].fetched = Date.now();
   await disr;
   renderCardBody(s);
 }
@@ -713,7 +784,7 @@ async function refreshAll(force = false) {
   if (refreshing) return refreshing;
   if (!force && Date.now() - lastRefresh < MIN_REFRESH_MS) return;
   lastRefresh = Date.now();
-  refreshing = Promise.all(config.stops.map(refreshOne)).finally(() => { refreshing = null; });
+  refreshing = Promise.all(visibleStops().map(refreshOne)).finally(() => { refreshing = null; });
   await refreshing;
   $("#lastUpdate").textContent = "Actualisé " + new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
@@ -738,12 +809,21 @@ function tick() {
   config.stops.forEach(s => { if (!s.uid) { s.uid = newUid(); migrated = true; } });
   if (migrated) saveConfig();
   applyDisplay();
+  currentTab = tabForNow();
   renderBoard();
   if (!config.stops.length) $("#addPanel").hidden = false;
   refreshAll(true);
   setInterval(() => { if (!document.hidden) refreshAll(); }, REFRESH_MS);
-  setInterval(() => config.stops.forEach(renderCardBody), 15000);   // décompte des minutes entre deux appels
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshAll(); });
+  setInterval(() => visibleStops().forEach(renderCardBody), 15000);   // décompte des minutes entre deux appels
+  // au retour après plus de 30 min en arrière-plan, l'onglet est rechoisi selon l'heure
+  let hiddenSince = 0;
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { hiddenSince = Date.now(); return; }
+    if (hiddenSince && Date.now() - hiddenSince > 30 * 60000 && tabForNow() !== currentTab) {
+      lastRefresh = 0; setTab(tabForNow());
+    }
+    refreshAll();
+  });
 })();
 
 /* Appli installable (PWA) : service worker en HTTPS ou en local */

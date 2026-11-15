@@ -1,7 +1,7 @@
 /* Service worker : met en cache les fichiers de l'appli (démarrage rapide, interface disponible hors ligne).
  * Les appels aux API (PRIM, données IDFM, /api/ du serveur local) ne sont jamais mis en cache.
  * Changer VERSION à chaque mise à jour de l'appli pour forcer le rafraîchissement du cache. */
-const VERSION = "v1";
+const VERSION = "v2";
 const CACHE = "prochains-passages-" + VERSION;
 const SHELL = ["./", "index.html", "prim-direct.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 

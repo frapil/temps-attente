@@ -49,6 +49,8 @@ Après une modification de l'appli, augmentez `VERSION` dans `docs/sw.js` pour q
   - métro, tram, bus : chaque sens a son propre quai, la carte suit donc un seul quai ;
   - RER : le quai est commun, les trains sont triés selon la position de leur terminus par rapport à la gare
     (plus fiable que le champ « Aller/Retour » des données SIRI, incohérent sur le RER A).
+- **Onglets Aller / Retour** : chaque carte est rangée dans « Aller », « Retour » ou les deux (via ⚙ ; une nouvelle carte va dans l'onglet ouvert).
+  Au démarrage, l'onglet est choisi selon l'heure (Retour à partir de 12 h, réglable dans ☰). Seules les cartes de l'onglet affiché sont actualisées.
 - On peut aussi masquer une destination précise d'un clic (pratique pour certaines missions RER).
 - **Affichage** : A− / A+ pour la taille, et nombre de passages par carte (réglage général, ou par carte via ⚙).
 - **Perturbations** : une ligne repliée par carte (⚠️ incidents, ℹ️ travaux/infos, ♿ ascenseurs) ; un clic la déplie.
