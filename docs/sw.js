@@ -1,7 +1,7 @@
 /* Service worker : met en cache les fichiers de l'appli (démarrage rapide, interface disponible hors ligne).
- * Les appels aux API (PRIM, données IDFM, /api/ du serveur local) ne sont jamais mis en cache.
+ * Les appels aux API (PRIM, données IDFM) ne sont jamais mis en cache.
  * Changer VERSION à chaque mise à jour de l'appli pour forcer le rafraîchissement du cache. */
-const VERSION = "v3";
+const VERSION = "v4";
 const CACHE = "prochains-passages-" + VERSION;
 const SHELL = ["./", "index.html", "prim-direct.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 
@@ -19,8 +19,8 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  // uniquement les fichiers de l'appli (même origine, hors /api/)
-  if (e.request.method !== "GET" || url.origin !== location.origin || url.pathname.includes("/api/")) return;
+  // uniquement les fichiers de l'appli (même origine)
+  if (e.request.method !== "GET" || url.origin !== location.origin) return;
   // réseau d'abord (pour recevoir les mises à jour), cache en secours hors ligne
   e.respondWith(
     fetch(e.request)

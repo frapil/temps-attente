@@ -1,6 +1,6 @@
 /* Moteur « direct » : appelle PRIM et les données IDFM depuis le navigateur, sans serveur.
- * Port JavaScript de server.py — renvoie les mêmes formes JSON que les routes /api/*.
- * Utilisé quand la page est servie par un hébergement statique (GitHub Pages, appli Android installée).
+ * Interface interne : handle("/api/…") renvoie les données attendues par index.html.
+ * La page est un site statique (GitHub Pages), installable comme appli (PWA).
  * La clé PRIM est stockée uniquement dans ce navigateur (localStorage). */
 (function () {
   "use strict";
@@ -421,7 +421,7 @@
     if (!store.set(CONFIG_STORE, JSON.stringify(cfg))) throw new Error("Impossible d'enregistrer : stockage du navigateur indisponible");
   }
 
-  /* ---------- routeur : mêmes chemins que server.py ---------- */
+  /* ---------- routeur : chemins /api/* utilisés par index.html ---------- */
   function errorMessage(e) {
     if (e instanceof HttpError) {
       if (e.status === 401 || e.status === 403) return `Erreur API ${e.status} : clé API PRIM invalide ou non autorisée`;

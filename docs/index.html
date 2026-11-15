@@ -140,7 +140,6 @@
     border: 1px solid var(--border); background: var(--card); color: var(--text); }
   .note { font-size: 12px; color: var(--muted); }
   .ok-msg { color: var(--ok); font-size: 13px; }
-  .modebadge { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
 
   .mob-text { display: none; }
   header h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -197,7 +196,7 @@
         </div>
         <div class="note" style="margin-top:4px">Pause automatique après 15 min sans interaction (quota PRIM).</div>
       </section>
-      <section id="keySection" hidden>
+      <section id="keySection">
         <h3>Jeton PRIM</h3>
         <form class="keyform" id="menuKeyForm">
           <input type="password" name="key" placeholder="Nouveau jeton" autocomplete="off" aria-label="Jeton PRIM">
@@ -210,26 +209,22 @@
         <div class="row">
           <button id="exportBtn">Exporter</button>
           <button id="copyBtn">Copier</button>
-          <button id="importBtn">Importer…</button>
+          <button id="importBtn">Importer un fichier…</button>
           <input type="file" id="importFile" accept="application/json,.json" hidden>
         </div>
-        <div class="note" style="margin-top:6px">Pour transférer vos cartes vers un autre appareil : exportez ou copiez ici, puis importez là-bas (fichier ou texte collé).</div>
-        <textarea id="importText" placeholder="…ou collez ici une configuration copiée" hidden></textarea>
-        <div class="row" id="importTextRow" hidden><button id="importTextBtn" class="primary">Importer ce texte</button></div>
+        <div class="note" style="margin:6px 0">Pour transférer vos cartes vers un autre appareil : exportez ou copiez ici, puis importez là-bas (fichier, ou texte collé ci-dessous).</div>
+        <textarea id="importText" placeholder="Collez ici une configuration copiée"></textarea>
+        <div class="row"><button id="importTextBtn" class="primary">Importer ce texte</button></div>
         <div class="ok-msg" id="cfgMsg"></div>
       </section>
-      <div class="note"><span class="modebadge" id="modeBadge"></span> Données : PRIM – Île-de-France Mobilités</div>
+      <div class="note">Données : PRIM – Île-de-France Mobilités</div>
     </div>
   </div>
 </header>
 
 <main>
   <div class="banner" id="keyBanner" hidden>
-    <div data-mode="server">
-      Clé API PRIM absente : créez un compte sur <a href="https://prim.iledefrance-mobilites.fr" target="_blank" rel="noopener">prim.iledefrance-mobilites.fr</a>,
-      générez un jeton, puis ajoutez <code>PRIM_API_KEY=votre_jeton</code> dans le fichier <code>.env</code> et relancez le serveur.
-    </div>
-    <div data-mode="direct">
+    <div>
       <b>Saisissez votre jeton PRIM</b> pour afficher les horaires. Créez-le sur
       <a href="https://prim.iledefrance-mobilites.fr" target="_blank" rel="noopener">prim.iledefrance-mobilites.fr</a> (« Mon jeton d'authentification »).
       Il reste uniquement sur cet appareil.
@@ -310,26 +305,8 @@ function badge(s) {
   return `<span class="badge ${esc(s.mode)}" style="background:${esc(bg)};color:${esc(fg)}" title="${esc(MODE_LABEL[s.mode] || s.mode)} ${esc(s.line)}">${esc(s.line)}</span>`;
 }
 
-let MODE = "server";  // "server" : servi par server.py ; "direct" : appels PRIM depuis le navigateur
-
-async function detectMode() {
-  try {
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 2500);
-    const r = await fetch("/api/status", { signal: ctl.signal, cache: "no-store" });
-    clearTimeout(t);
-    if (r.ok && "api_key" in (await r.json())) return "server";
-  } catch { /* pas de serveur */ }
-  return "direct";
-}
-
-async function api(path, opts) {
-  if (MODE === "direct") return window.PrimDirect.handle(path, opts);
-  const r = await fetch(path, opts);
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
-  return j;
-}
+// toutes les données passent par prim-direct.js (appels PRIM / IDFM depuis le navigateur)
+const api = (path, opts) => window.PrimDirect.handle(path, opts);
 
 async function saveConfig() {
   await api("/api/config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) });
@@ -420,7 +397,6 @@ $("#menuBtn").onclick = (e) => { e.stopPropagation(); toggleMenu(); };
 document.addEventListener("click", (e) => { if (!e.target.closest(".menuwrap")) toggleMenu(false); });
 
 function updateKeyState() {
-  if (MODE !== "direct") return;
   const k = window.PrimDirect.getKey();
   $("#keyState").textContent = k ? `Jeton enregistré sur cet appareil (…${k.slice(-4)}).` : "Aucun jeton enregistré.";
 }
@@ -452,12 +428,9 @@ $("#exportBtn").onclick = () => {
 };
 $("#copyBtn").onclick = async () => {
   try { await navigator.clipboard.writeText(exportText()); flash("Configuration copiée."); }
-  catch { $("#importText").hidden = false; $("#importText").value = exportText(); $("#importText").select(); flash("Copiez le texte sélectionné."); }
+  catch { $("#importText").value = exportText(); $("#importText").select(); flash("Copiez le texte sélectionné."); }
 };
-$("#importBtn").onclick = () => {
-  $("#importText").hidden = false; $("#importTextRow").hidden = false; $("#importText").value = "";
-  $("#importFile").click();
-};
+$("#importBtn").onclick = () => $("#importFile").click();
 $("#importFile").onchange = async (e) => {
   const f = e.target.files[0]; if (!f) return;
   await importConfig(await f.text());
@@ -475,7 +448,7 @@ async function importConfig(text) {
   await saveConfig();
   lastData = {}; lastDisr = {};
   applyDisplay(); renderBoard(); refreshAll(true);
-  $("#importText").hidden = true; $("#importTextRow").hidden = true;
+  $("#importText").value = "";
   flash(`${cfg.stops.length} carte(s) importée(s).`);
 }
 
@@ -863,10 +836,6 @@ function tick() {
 
 (async function init() {
   tick(); setInterval(tick, 1000);
-  MODE = await detectMode();
-  document.querySelectorAll("#keyBanner [data-mode]").forEach(el => el.hidden = el.dataset.mode !== MODE);
-  $("#keySection").hidden = MODE !== "direct";
-  $("#modeBadge").textContent = MODE === "direct" ? "Mode autonome" : "Mode serveur";
   try { $("#keyBanner").hidden = (await api("/api/status")).api_key; } catch {}
   config = await api("/api/config");
   config.stops ||= [];

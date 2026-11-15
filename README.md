@@ -1,67 +1,64 @@
-# Mes prochains passages (métro, RER, tram, bus – PRIM / IDFM)
+# Temps d'attente (métro, RER, tram, bus – PRIM / IDFM)
 
-Une page web pour configurer vos arrêts de métro, RER, tram et bus en Île-de-France, et voir le temps d'attente des prochains passages en temps réel.
+Une appli web pour configurer vos arrêts de métro, RER, tram et bus en Île-de-France, et voir le temps d'attente des prochains passages en temps réel.
 
-Deux façons de l'utiliser, avec **la même interface** (`docs/`) :
+**En ligne : https://frapil.github.io/temps-attente/**
 
-| | Sur le Mac (mode serveur) | Sur Android / navigateur (mode autonome) |
-|---|---|---|
-| Lancement | `python3 server.py` puis http://localhost:8000 | ouvrir l'adresse GitHub Pages, « Installer l'application » |
-| Jeton PRIM | fichier `.env` | saisi une fois dans l'appli (☰), stocké sur l'appareil |
-| Cartes | `config.json` | stockées sur l'appareil |
+C'est un site statique : le dossier `docs/`, publié par GitHub Pages (branche `main`, dossier `/docs`). Il appelle directement les API PRIM et IDFM depuis le navigateur, ce qu'elles autorisent. Aucun serveur n'est nécessaire.
 
-La page détecte toute seule le mode : si le serveur Python répond (`/api/status`), elle passe par lui ; sinon elle appelle directement les API PRIM et IDFM (qui autorisent les appels depuis un navigateur).
+## Installation
+
+1. Sur Android, ouvrez l'adresse dans Chrome, puis menu ⋮ → **Installer l'application**. Sur ordinateur, ouvrez simplement l'adresse.
+2. Saisissez votre jeton PRIM, dans le bandeau orange ou dans le menu ☰. Il est stocké uniquement sur l'appareil.
+3. Ajoutez vos arrêts avec **+**.
+
+Le jeton et les cartes sont enregistrés dans le navigateur, propres à chaque appareil et à chaque adresse.
+Pour transférer vos cartes vers un autre appareil :
+- sur l'appareil de départ, ☰ → **Copier** (ou **Exporter**) ;
+- sur l'autre, ☰ → collez le texte dans la zone prévue, puis **Importer ce texte** (ou **Importer un fichier…**).
 
 ## Jeton PRIM
 
-Créez un compte sur https://prim.iledefrance-mobilites.fr, puis générez un jeton dans « Mon jeton d'authentification ».
-Abonnez-vous à l'API **« Prochains passages (plateforme Île-de-France Mobilités) - requête unitaire »**.
+1. Créez un compte sur https://prim.iledefrance-mobilites.fr.
+2. Générez un jeton dans « Mon jeton d'authentification ».
+3. Abonnez-vous à l'API **« Prochains passages (plateforme Île-de-France Mobilités) - requête unitaire »**.
 
-## Mode serveur (Mac)
-
-1. Copiez `.env.example` en `.env` et collez-y votre jeton.
-2. Lancez le serveur (Python 3.8 ou plus, aucune dépendance) :
-
-   ```bash
-   python3 server.py
-   ```
-
-3. Ouvrez http://localhost:8000
-
-## Mode autonome (Android, GitHub Pages)
-
-1. Le dossier `docs/` est publié par GitHub Pages (Settings → Pages → branche `main`, dossier `/docs`).
-2. Sur Android, ouvrez l'adresse dans Chrome, puis menu ⋮ → **Installer l'application**.
-3. Saisissez votre jeton PRIM (bandeau orange ou menu ☰).
-4. Pour récupérer vos cartes du Mac : sur le Mac, ☰ → **Copier** (ou **Exporter**) ; sur le téléphone, ☰ → **Importer…** puis collez le texte (ou choisissez le fichier).
-
-Après une modification de l'appli, augmentez `VERSION` dans `docs/sw.js` pour que les téléphones récupèrent la nouvelle version.
+Le quota par défaut est de **1 000 requêtes par jour et 5 par seconde**. Chaque carte consomme une requête à chaque actualisation.
+Demandez plutôt les **quotas augmentés**, gratuits (1 000 000 par jour) : page de cette API → « Gérer mes quotas ».
 
 ## Fonctionnement
 
-- Recherche d'arrêts : référentiel public IDFM « arrets-lignes » (pas de clé nécessaire).
-- Couleurs des lignes : référentiel public « referentiel-des-lignes ».
-- Temps réel : API PRIM `stop-monitoring` (SIRI Lite), avec `MonitoringRef=STIF:StopPoint:Q:xxx:` ou `STIF:StopArea:SP:xxx:` et un filtre `LineRef`.
-- Perturbations : API Navitia de PRIM (`line_reports`).
-- Actualisation toutes les minutes par défaut (réglable dans ☰ : 30 s à 5 min, ou manuelle ; au plus une toutes les 10 s, sauf ⟳).
-  Cache de 20 s pour les passages et 2 min pour les perturbations.
-- **Quota PRIM** : le jeton par défaut est limité à **1 000 requêtes par jour et 5 par seconde** (une requête par carte et par actualisation).
-  L'appli interroge les cartes l'une après l'autre, se met en pause après 15 min sans interaction, et s'arrête 10 min après une erreur 429 (bandeau d'avertissement, derniers horaires conservés).
-  Pour un usage confortable, demandez les **quotas augmentés** (gratuits, 1 000 000 par jour) sur la page de l'API « Prochains passages – requête unitaire » de PRIM → « Gérer mes quotas ».
-- **Sens** : en ajoutant une ligne, choisissez « Les deux sens » ou un sens précis. Vous pouvez créer une carte par sens.
-  Le sens d'une carte existante se change via ⚙.
-  - métro, tram, bus : chaque sens a son propre quai, la carte suit donc un seul quai ;
-  - RER : le quai est commun, les trains sont triés selon la position de leur terminus par rapport à la gare
-    (plus fiable que le champ « Aller/Retour » des données SIRI, incohérent sur le RER A).
-- **Onglets Aller / Retour** : chaque carte est rangée dans « Aller », « Retour » ou les deux (via ⚙ ; une nouvelle carte va dans l'onglet ouvert).
-  Au démarrage, l'onglet est choisi selon l'heure (Retour à partir de 12 h, réglable dans ☰). Seules les cartes de l'onglet affiché sont actualisées.
-- On peut aussi masquer une destination précise d'un clic (pratique pour certaines missions RER).
-- **Affichage** : A− / A+ pour la taille, et nombre de passages par carte (réglage général, ou par carte via ⚙).
-- **Perturbations** : une ligne repliée par carte (⚠️ incidents, ℹ️ travaux/infos, ♿ ascenseurs) ; un clic la déplie.
+- **Recherche d'arrêts** : référentiels publics IDFM « arrets-lignes » et « referentiel-des-lignes » (couleurs), sans clé.
+- **Temps réel** : API PRIM `stop-monitoring` (SIRI Lite).
+  - `MonitoringRef=STIF:StopPoint:Q:xxx:` ou `STIF:StopArea:SP:xxx:` ;
+  - filtre `LineRef`.
+- **Perturbations** : API Navitia de PRIM (`line_reports`). Chaque carte les résume sur une ligne repliée (⚠️ incidents, ℹ️ travaux et infos, ♿ ascenseurs) ; un clic la déplie.
+- **Sens** : en ajoutant une ligne, choisissez « Les deux sens » ou un sens précis. Vous pouvez créer une carte par sens, et changer le sens d'une carte via ⚙.
+  - Métro, tram et bus : chaque sens a son propre quai.
+  - RER : le quai est commun. Les trains sont triés selon la position de leur terminus par rapport à la gare. C'est plus fiable que le champ « Aller/Retour » de SIRI, incohérent sur le RER A.
+  - Un clic sur une destination la masque, ce qui est pratique pour certaines missions RER.
+- **Onglets Aller / Retour** : chaque carte est rangée dans « Aller », « Retour » ou les deux, via ⚙.
+  - Une nouvelle carte va dans l'onglet ouvert.
+  - Au démarrage, l'onglet est choisi selon l'heure : Retour à partir de 12 h, réglable dans ☰.
+- **Affichage** : A− / A+ règlent la taille. Le nombre de passages se règle pour toutes les cartes, ou carte par carte via ⚙.
+- **Actualisation** : toutes les minutes par défaut. Réglable dans ☰, de 30 s à 5 min, ou manuelle. ⟳ force une actualisation.
+  - Seules les cartes de l'onglet affiché sont actualisées, l'une après l'autre.
+  - Pause automatique après 15 min sans interaction.
+  - Après une erreur 429 (quota dépassé) : arrêt pendant 10 min. Un bandeau prévient, et les derniers horaires restent affichés.
+- **Cache** : 20 s pour les passages, 2 min pour les perturbations, 24 h pour les référentiels.
 
-## Fichiers
+## Fichiers (`docs/`)
 
-- `server.py` : serveur local (mode serveur).
-- `docs/index.html` : l'interface (commune aux deux modes).
-- `docs/prim-direct.js` : moteur du mode autonome (port JavaScript de `server.py`).
-- `docs/manifest.webmanifest`, `docs/sw.js`, `docs/icon-*.png` : appli installable (PWA).
+- `index.html` : l'interface.
+- `prim-direct.js` : appels aux API PRIM et IDFM, et traitement des données (sens, perturbations, cache).
+- `manifest.webmanifest`, `sw.js`, `icon-*.png` : appli installable (PWA).
+
+Après une modification, augmentez `VERSION` dans `docs/sw.js` pour que les appareils récupèrent la nouvelle version.
+
+Pour tester en local :
+
+```bash
+cd docs && python3 -m http.server 8080
+```
+
+puis ouvrez http://localhost:8080.
