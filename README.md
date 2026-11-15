@@ -43,7 +43,11 @@ Après une modification de l'appli, augmentez `VERSION` dans `docs/sw.js` pour q
 - Couleurs des lignes : référentiel public « referentiel-des-lignes ».
 - Temps réel : API PRIM `stop-monitoring` (SIRI Lite), avec `MonitoringRef=STIF:StopPoint:Q:xxx:` ou `STIF:StopArea:SP:xxx:` et un filtre `LineRef`.
 - Perturbations : API Navitia de PRIM (`line_reports`).
-- Actualisation toutes les 30 s (au plus une toutes les 10 s, sauf ⟳). Cache de 20 s pour les passages et 2 min pour les perturbations.
+- Actualisation toutes les minutes par défaut (réglable dans ☰ : 30 s à 5 min, ou manuelle ; au plus une toutes les 10 s, sauf ⟳).
+  Cache de 20 s pour les passages et 2 min pour les perturbations.
+- **Quota PRIM** : le jeton par défaut est limité à **1 000 requêtes par jour et 5 par seconde** (une requête par carte et par actualisation).
+  L'appli interroge les cartes l'une après l'autre, se met en pause après 15 min sans interaction, et s'arrête 10 min après une erreur 429 (bandeau d'avertissement, derniers horaires conservés).
+  Pour un usage confortable, demandez les **quotas augmentés** (gratuits, 1 000 000 par jour) sur la page de l'API « Prochains passages – requête unitaire » de PRIM → « Gérer mes quotas ».
 - **Sens** : en ajoutant une ligne, choisissez « Les deux sens » ou un sens précis. Vous pouvez créer une carte par sens.
   Le sens d'une carte existante se change via ⚙.
   - métro, tram, bus : chaque sens a son propre quai, la carte suit donc un seul quai ;

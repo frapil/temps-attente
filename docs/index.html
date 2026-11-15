@@ -191,6 +191,11 @@
           <label class="group meta" title="Au démarrage, l'appli ouvre l'onglet Aller avant cette heure, Retour après">
             Onglet Retour à partir de <select id="switchHour"></select></label>
         </div>
+        <div class="row" style="margin-top:8px">
+          <label class="group meta" title="Chaque actualisation consomme une requête PRIM par carte affichée">
+            Actualisation <select id="refreshSel"></select></label>
+        </div>
+        <div class="note" style="margin-top:4px">Pause automatique après 15 min sans interaction (quota PRIM).</div>
       </section>
       <section id="keySection" hidden>
         <h3>Jeton PRIM</h3>
@@ -235,6 +240,14 @@
     </div>
   </div>
 
+  <div class="banner" id="quotaBanner" hidden>
+    <b>Quota PRIM atteint</b> : les horaires affichés ne sont plus actualisés (prochain essai automatique vers <span id="quotaUntil"></span>, ou ⟳).
+    Le jeton par défaut est limité à 1 000 requêtes par jour et 5 par seconde.
+    Pour l'éviter, demandez des quotas augmentés, c'est gratuit : connectez-vous sur
+    <a href="https://prim.iledefrance-mobilites.fr/fr/apis/idfm-ivtr-requete_unitaire" target="_blank" rel="noopener">la page de l'API Prochains passages</a>
+    puis « Gérer mes quotas ».
+  </div>
+
   <section id="addPanel" hidden>
     <div class="searchrow">
       <input id="q" type="search" placeholder="Nom de l'arrêt (ex. Châtelet, Nation, La Défense…)" autocomplete="off">
@@ -260,7 +273,7 @@
 
 <script src="prim-direct.js"></script>
 <script>
-const REFRESH_MS = 30000;
+const REFRESH_CHOICES = [[30, "30 s"], [60, "1 min"], [120, "2 min"], [300, "5 min"], [0, "Manuelle (⟳)"]];
 const MODE_LABEL = { metro: "Métro", rer: "RER", tram: "Tram", bus: "Bus" };
 const ZOOMS = [0.6, 0.7, 0.8, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2, 2.5];
 const MAX_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10, 15];
@@ -286,6 +299,7 @@ const TAB_CHOICES = [["aller", "Aller"], ["retour", "Retour"], ["both", "Les deu
 const tabsOf = (s) => (Array.isArray(s.tabs) && s.tabs.length ? s.tabs : ["aller", "retour"]);
 const inTab = (s, t) => tabsOf(s).includes(t);
 const tabChoice = (s) => (tabsOf(s).length > 1 ? "both" : tabsOf(s)[0]);
+const refreshSec = () => (Number.isInteger(display().refresh) ? display().refresh : 60);
 const switchHour = () => (Number.isInteger(display().switch_hour) ? display().switch_hour : 12);
 const tabForNow = () => (new Date().getHours() < switchHour() ? "aller" : "retour");
 let currentTab = "aller";
@@ -349,6 +363,7 @@ function applyDisplay() {
   document.querySelectorAll('[data-zoom="1"]').forEach(b => b.disabled = z >= ZOOMS[ZOOMS.length - 1]);
   document.querySelectorAll(".maxDefault").forEach(el => el.value = String(display().max || 6));
   $("#switchHour").value = String(switchHour());
+  $("#refreshSel").value = String(refreshSec());
 }
 function stepZoom(dir) {
   const z = display().zoom || 1;
@@ -364,6 +379,8 @@ document.querySelectorAll(".maxDefault").forEach(sel => {
     applyDisplay(); visibleStops().forEach(renderCardBody); saveConfig();
   };
 });
+$("#refreshSel").innerHTML = REFRESH_CHOICES.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+$("#refreshSel").onchange = (e) => { display().refresh = +e.target.value; saveConfig(); updateStatus(); };
 $("#switchHour").innerHTML = Array.from({ length: 24 }, (_, h) => `<option value="${h}">${h} h</option>`).join("");
 $("#switchHour").onchange = (e) => {
   display().switch_hour = +e.target.value;
@@ -384,7 +401,8 @@ function setTab(t) {
   currentTab = t;
   renderBoard();
   // cartes jamais chargées ou trop anciennes : on les rafraîchit
-  visibleStops().filter(s => !lastData[s.uid] || Date.now() - (lastData[s.uid].fetched || 0) > MIN_REFRESH_MS).forEach(refreshOne);
+  if (Date.now() < quotaUntil) return;
+  refreshStaggered(visibleStops().filter(s => !lastData[s.uid] || Date.now() - (lastData[s.uid].fetched || 0) > MIN_REFRESH_MS));
 }
 $("#tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-tab]");
@@ -652,7 +670,8 @@ function renderCardBody(s) {
     : `<div class="empty">Aucun passage prévu prochainement${hasSerious ? " — voir la perturbation ci-dessus" : ""}.</div>`;
 
   const upd = new Date(d.updated).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  body.innerHTML = disrHtml + filter + list + `<div class="card-foot">Mis à jour à ${upd}</div>`;
+  body.innerHTML = disrHtml + filter + list + `<div class="card-foot">Mis à jour à ${upd}${
+    d.stale ? ` · <span style="color:var(--danger)">${esc(d.stale)}</span>` : ""}</div>`;
 }
 
 /* Perturbations : une ligne compacte (titre principal + compteurs), dépliable */
@@ -770,26 +789,73 @@ async function refreshOne(s) {
   try {
     lastData[s.uid] = await api(url);
   } catch (e) {
-    lastData[s.uid] = { error: e.message };
+    if (/\b429\b/.test(e.message)) quotaUntil = Date.now() + QUOTA_PAUSE_MS;
+    // en cas d'erreur, on garde les derniers horaires connus (le décompte continue)
+    const prev = lastData[s.uid];
+    lastData[s.uid] = prev && prev.departures ? { ...prev, stale: e.message } : { error: e.message };
   }
   lastData[s.uid].fetched = Date.now();
   await disr;
   renderCardBody(s);
 }
 
-let lastRefresh = 0, refreshing = null;
-const MIN_REFRESH_MS = 10000;  // au plus un rafraîchissement toutes les 10 s (sauf ⟳)
+/* Quota PRIM (jeton par défaut : 5 requêtes/s et 1 000 par jour) :
+ * - les cartes sont interrogées l'une après l'autre (≈ 2 requêtes/s au plus) ;
+ * - actualisation automatique réglable (1 min par défaut), en pause après 15 min sans interaction ;
+ * - après une erreur 429, plus d'actualisation automatique pendant 10 min. */
+let lastRefresh = 0, lastDone = 0, refreshing = null, quotaUntil = 0, lastActivity = Date.now();
+const MIN_REFRESH_MS = 10000;          // au plus un rafraîchissement toutes les 10 s (sauf ⟳)
+const PAUSE_AFTER_MS = 15 * 60000;
+const QUOTA_PAUSE_MS = 10 * 60000;
+const paused = () => Date.now() - lastActivity > PAUSE_AFTER_MS;
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const hm = (t) => new Date(t).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+async function refreshStaggered(stops) {
+  const jobs = [];
+  for (const s of stops) {
+    if (Date.now() < quotaUntil && jobs.length) {   // quota atteint : on arrête là
+      if (!lastData[s.uid]) { lastData[s.uid] = { error: "Non actualisé : quota PRIM atteint", fetched: 0 }; renderCardBody(s); }
+      continue;
+    }
+    jobs.push(refreshOne(s));
+    await sleep(500 * Math.max(1, s.stop_ids.length));
+  }
+  await Promise.all(jobs);
+}
 
 async function refreshAll(force = false) {
   if (refreshing) return refreshing;
-  if (!force && Date.now() - lastRefresh < MIN_REFRESH_MS) return;
+  if (!force) {
+    if (Date.now() - lastRefresh < MIN_REFRESH_MS) return;
+    if (Date.now() < quotaUntil || paused()) { updateStatus(); return; }
+  }
+  quotaUntil = 0;
   lastRefresh = Date.now();
-  refreshing = Promise.all(visibleStops().map(refreshOne)).finally(() => { refreshing = null; });
+  refreshing = refreshStaggered(visibleStops()).finally(() => { refreshing = null; });
   await refreshing;
-  $("#lastUpdate").textContent = "Actualisé " + new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  lastDone = Date.now();
+  updateStatus();
+}
+
+function updateStatus() {
+  const quota = Date.now() < quotaUntil;
+  $("#quotaBanner").hidden = !quota;
+  if (quota) $("#quotaUntil").textContent = hm(quotaUntil);
+  let txt = lastDone ? "Actualisé " + hm(lastDone) : "";
+  if (quota) txt = "Quota PRIM atteint";
+  else if (!refreshSec()) txt += " · auto désactivée";
+  else if (paused()) txt += " · en pause";
+  $("#lastUpdate").textContent = txt;
 }
 
 $("#refreshBtn").onclick = () => refreshAll(true);
+// toute interaction relance l'actualisation automatique si elle était en pause
+["pointerdown", "keydown"].forEach(ev => document.addEventListener(ev, () => {
+  const wasPaused = paused();
+  lastActivity = Date.now();
+  if (wasPaused) { updateStatus(); refreshAll(); }
+}, { passive: true }));
 
 function tick() {
   $("#clock").textContent = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
@@ -813,12 +879,17 @@ function tick() {
   renderBoard();
   if (!config.stops.length) $("#addPanel").hidden = false;
   refreshAll(true);
-  setInterval(() => { if (!document.hidden) refreshAll(); }, REFRESH_MS);
+  setInterval(() => {
+    const sec = refreshSec();
+    if (!document.hidden && sec && Date.now() - lastRefresh >= sec * 1000) refreshAll();
+    else updateStatus();
+  }, 5000);
   setInterval(() => visibleStops().forEach(renderCardBody), 15000);   // décompte des minutes entre deux appels
   // au retour après plus de 30 min en arrière-plan, l'onglet est rechoisi selon l'heure
   let hiddenSince = 0;
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) { hiddenSince = Date.now(); return; }
+    lastActivity = Date.now();
     if (hiddenSince && Date.now() - hiddenSince > 30 * 60000 && tabForNow() !== currentTab) {
       lastRefresh = 0; setTab(tabForNow());
     }
