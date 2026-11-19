@@ -54,3 +54,11 @@ Demandez plutôt les **quotas augmentés**, gratuits (1 000 000 par jour) : page
 - `manifest.webmanifest`, `sw.js`, `icon-*.png` : appli installable (PWA).
 
 Après une modification, augmentez `VERSION` dans `docs/sw.js` pour que les appareils récupèrent la nouvelle version.
+
+## Jeu : les voisins de la France
+
+Un petit jeu éducatif dans `docs/pays-limitrophes/` : un pays limitrophe de la France s'affiche, il faut le retrouver sur la carte d'Europe avant la fin du minuteur, avec 3 essais par pays (+100 pts et bonus de rapidité, −25 pts par erreur). Trois niveaux (30 s, 20 s, 10 s), un mode « Réviser » et un record par niveau.
+
+**En ligne (une fois sur `main`) : https://frapil.github.io/temps-attente/pays-limitrophes/**
+
+Carte : Natural Earth (domaine public), via `world-atlas`.
